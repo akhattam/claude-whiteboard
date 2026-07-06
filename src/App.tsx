@@ -49,10 +49,24 @@ export default function App() {
     }
   }, []);
 
+  const clearEntries = useCallback(() => setEntries([]), []);
+
   useEffect(() => {
     if (!api) return;
-    return connectLive(api, addEntry);
-  }, [api, addEntry]);
+    return connectLive(api, addEntry, clearEntries);
+  }, [api, addEntry, clearEntries]);
+
+  const clearChat = useCallback(async () => {
+    if (!window.confirm("Clear the whole conversation? (The canvas stays.)"))
+      return;
+    try {
+      const res = await fetch("/chat/clear", { method: "POST" });
+      if (res.ok) {
+        setEntries([]);
+        setStatus("idle");
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     fetch("/chat")
@@ -182,6 +196,7 @@ export default function App() {
         onOpen={() => setPanelOpen(true)}
         onClose={() => setPanelOpen(false)}
         onSend={sendMessage}
+        onClearChat={clearChat}
       />
     </div>
   );

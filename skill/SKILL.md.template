@@ -102,6 +102,7 @@ Claude can add elements that appear live on the user's open board. Never edit `b
 ## Board UI notes
 
 - **🗑 button** (next to Ask Claude): erases the entire board after a confirm; the user can undo with Cmd+Z. After a clear, `meta.json` has `empty: true` and `board.png` is blank white — if you read an empty board, say so rather than describing stale content.
+- **🧹 button** (panel header): clears the conversation transcript (`chat.json`) after a confirm; the canvas is untouched. `POST /chat/clear` does the same programmatically.
 - The panel chat and the terminal are the same Claude session — context carries across both.
 
 ## Stopping

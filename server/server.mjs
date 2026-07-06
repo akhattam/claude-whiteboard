@@ -282,6 +282,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/chat/clear") {
+    chat = [];
+    // chatCounter stays monotonic so tab-side id-dedupe keeps working
+    writeAtomic(CHAT_PATH, JSON.stringify(chat, null, 2));
+    for (const client of sseClients) client.write("event: chat-clear\ndata: {}\n\n");
+    json(res, 200, { ok: true });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/events") {
     res.writeHead(200, {
       "content-type": "text/event-stream",

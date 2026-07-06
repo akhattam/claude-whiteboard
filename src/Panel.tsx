@@ -19,6 +19,7 @@ export function Panel({
   onOpen,
   onClose,
   onSend,
+  onClearChat,
 }: {
   open: boolean;
   status: PanelStatus;
@@ -26,6 +27,7 @@ export function Panel({
   onOpen: () => void;
   onClose: () => void;
   onSend: (text: string) => void;
+  onClearChat: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -57,9 +59,20 @@ export function Panel({
     <aside className="claude-panel">
       <header>
         <span>🧠 Claude</span>
-        <button onClick={onClose} aria-label="Collapse panel">
-          ✕
-        </button>
+        <span className="panel-header-actions">
+          {entries.length > 0 && (
+            <button
+              onClick={onClearChat}
+              aria-label="Clear conversation"
+              title="Clear the conversation (canvas stays)"
+            >
+              🧹
+            </button>
+          )}
+          <button onClick={onClose} aria-label="Collapse panel">
+            ✕
+          </button>
+        </span>
       </header>
       <div className="claude-panel-body" ref={bodyRef}>
         {sorted.length === 0 && status === "idle" && (

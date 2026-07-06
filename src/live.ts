@@ -12,6 +12,7 @@ import type { ChatEntry } from "./Panel";
 export function connectLive(
   api: ExcalidrawImperativeAPI,
   onChat: (entry: ChatEntry) => void,
+  onChatClear: () => void,
 ): () => void {
   const source = new EventSource("/events");
   source.addEventListener("draw", (event) => {
@@ -38,5 +39,6 @@ export function connectLive(
       console.error("failed to parse chat entry from server", err);
     }
   });
+  source.addEventListener("chat-clear", () => onChatClear());
   return () => source.close();
 }
