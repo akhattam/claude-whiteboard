@@ -65,12 +65,16 @@ await_ask() {
     echo "Whiteboard server not running — run 'whiteboard start' first" >&2
     exit 1
   fi
-  # Take over from any existing watcher (including zombies from dead sessions)
+  # Defer to a LIVE listener (first armer wins — killing it would wake its
+  # session and start a re-arm ping-pong war between sessions). Only clean up
+  # dead owners (zombie pidfiles from crashed sessions).
   if [ -f "$AWAIT_PID_FILE" ]; then
     local old_pid
     old_pid="$(cat "$AWAIT_PID_FILE" 2>/dev/null || true)"
     if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
-      kill "$old_pid" 2>/dev/null || true
+      echo "Another listener is already active (pid $old_pid) — deferring to it."
+      echo "That session will answer the board. To transfer ownership: kill $old_pid (or 'whiteboard stop', then re-arm here). Do NOT re-run await-ask in a loop."
+      exit 0
     fi
   fi
   echo $$ >"$AWAIT_PID_FILE"

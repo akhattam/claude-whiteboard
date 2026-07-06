@@ -27,7 +27,7 @@ This is idempotent — it starts the server only if it isn't running, then opens
 {{PROJECT_ROOT}}/bin/whiteboard await-ask
 ```
 
-It long-polls until the user presses the "✨ Ask Claude" button on the board, then completes, which wakes this session (see below). It safely takes over from any stale watcher.
+It long-polls until the user presses the "✨ Ask Claude" button on the board, then completes, which wakes this session (see below). It cleans up stale watchers from dead sessions, but **defers if another session's listener is already live** (it prints "deferring" and exits 0 — that's success, do not retry or loop; the other session owns the board until its watcher is killed).
 
 3. **Check for unanswered messages**: read `~/.claude-whiteboard/chat.json`; if there are user entries newer than the last claude entry (messages typed while no session was listening), answer them now via the wake protocol below.
 4. Tell the user the board is ready, that it auto-saves ~1.5s after they stop drawing, and that they can **chat with Claude in the board's side panel** or press **✨ Ask Claude** (top right) — no terminal needed.
