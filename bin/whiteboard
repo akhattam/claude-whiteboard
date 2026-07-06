@@ -99,12 +99,14 @@ await_ask() {
         ;;
       *)
         failures=$((failures + 1))
-        if [ "$failures" -ge 2 ]; then
+        # Tolerate transient blips (laptop sleep/wake) — only a sustained
+        # outage means the server is really gone
+        if [ "$failures" -ge 5 ]; then
           rm -f "$AWAIT_PID_FILE"
           echo "Whiteboard server unreachable — stopped listening. Do not re-arm until 'whiteboard start'." >&2
           exit 1
         fi
-        sleep 2
+        sleep 3
         ;;
     esac
   done
