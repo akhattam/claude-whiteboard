@@ -1,0 +1,119 @@
+---
+name: whiteboard
+description: Open, manage, read, chat via, and draw on the local Claude Whiteboard (an Excalidraw canvas with a built-in Claude chat panel). Use when the user says "whiteboard", "open the board", "look at the board", "what's on the board", "check my sketch", "check my wireframe", asks Claude to draw/annotate/add to the board, or wants to brainstorm visually.
+---
+
+# Claude Whiteboard
+
+A local Excalidraw whiteboard the user draws on; it auto-saves snapshots that Claude can read, and has a chat panel + Ask Claude button that wake Claude's session directly from the board.
+
+- Project: `{{PROJECT_ROOT}}`
+- Data: `~/.claude-whiteboard/` — `board.png` (latest image), `board.excalidraw` (scene JSON), `meta.json` (updatedAt, elementCount, empty), `chat.json` (conversation transcript: `{id, role: "user"|"claude", text, at, kind?}`)
+- Board URL: http://localhost:3737
+
+## Opening the board ("open the whiteboard")
+
+1. Run:
+
+```bash
+{{PROJECT_ROOT}}/bin/whiteboard start
+```
+
+This is idempotent — it starts the server only if it isn't running, then opens the board in the browser.
+
+2. **Arm the Ask Claude button** — run this as a background Bash task (`run_in_background: true`):
+
+```bash
+{{PROJECT_ROOT}}/bin/whiteboard await-ask
+```
+
+It long-polls until the user presses the "✨ Ask Claude" button on the board, then completes, which wakes this session (see below). It safely takes over from any stale watcher.
+
+3. **Check for unanswered messages**: read `~/.claude-whiteboard/chat.json`; if there are user entries newer than the last claude entry (messages typed while no session was listening), answer them now via the wake protocol below.
+4. Tell the user the board is ready, that it auto-saves ~1.5s after they stop drawing, and that they can **chat with Claude in the board's side panel** or press **✨ Ask Claude** (top right) — no terminal needed.
+
+## When the board wakes you (background task completes with "ASK_RECEIVED")
+
+The user pressed the ✨ Ask Claude button OR sent a chat message from the panel. The board forced a fresh snapshot first, so `board.png` is current. The printed wake payload is a **hint only** — messages may have been coalesced.
+
+1. Read `~/.claude-whiteboard/chat.json` and collect **all** user entries after your last claude entry — answer every one of them. Entries with `kind: "board-look"` mean the button was pressed.
+2. Read `~/.claude-whiteboard/board.png` (and `board.excalidraw` for exact labels if dense).
+3. Write ONE full response as **markdown to a scratchpad file**, addressing everything — it appears as your chat reply in the panel, so make it self-contained (see response style below). Headings, lists, and tables all render.
+4. Post it:
+
+```bash
+{{PROJECT_ROOT}}/bin/whiteboard respond /path/to/response.md
+```
+
+5. **Add sticky notes on the canvas** (default behavior, via the draw flow) whenever the response has spatially-anchorable or headline content — this is what makes the board feel alive:
+   - Good sticky material: a callout tied to a specific sketch element ("no back action here"), a headline insight, an open question, a suggested next step. **1–4 stickies max.**
+   - Sticky text ≤ ~8 words — it's a signpost; the full reasoning lives in the chat panel. Never mirror the whole response onto the canvas.
+   - Placement: read `board.excalidraw` bounds first; put each sticky in empty space adjacent to what it refers to (arrow optional); cluster general takeaways in a clear margin area.
+   - Style: orange `#f08c00` stroke + `#fff9db` solid fill — Claude's established visual identity.
+   - Skip stickies when the response is purely conversational (naming discussions, yes/no answers) — chat-only is correct there.
+6. **Re-arm the listener**: run `await-ask` as a background task again so the next press/message wakes you. If `await-ask` exited 1 (server unreachable), do NOT re-arm — tell the user instead.
+7. In the terminal, reply with only a one-line confirmation (e.g. "Responded on the board — see the panel."). The panel response is the deliverable.
+
+## Reading the board ("look at the board", "what do you think of this?")
+
+1. Read `~/.claude-whiteboard/meta.json` first. If it's missing or `updatedAt` is old, the board may be empty or the server not running — tell the user rather than describing a stale snapshot.
+2. Read `~/.claude-whiteboard/board.png` with the Read tool (it renders images).
+3. Respond as a product-thinking partner, not an image-captioner (this style applies to panel responses too):
+   - Name what you see: screens, flows, boxes-and-arrows, sticky-note themes, labels.
+   - Infer intent: what feature or user flow is being sketched? Walk the journey step by step.
+   - Critique constructively: gaps in the flow, ambiguous states, missing edge cases, questions a user or engineer would ask next.
+   - Offer 2–3 concrete next steps or sharpening questions.
+   - If handwriting or labels are ambiguous, say what you can't read instead of guessing.
+4. For exact text and connections (dense boards), also read `~/.claude-whiteboard/board.excalidraw` — it's JSON with every element's text and bindings.
+
+## Drawing on the board ("add that to the board", "annotate my sketch", "sketch it for me")
+
+Claude can add elements that appear live on the user's open board. Never edit `board.excalidraw` or `board.png` directly — always go through the draw endpoint.
+
+1. Read `~/.claude-whiteboard/board.excalidraw` first to see existing elements' `x`, `y`, `width`, `height`. Place additions in empty space near the content they relate to — never on top of the user's work.
+2. Write a JSON file (in the scratchpad) of Excalidraw "skeleton" elements:
+
+```json
+{
+  "elements": [
+    { "type": "rectangle", "id": "note1", "x": 800, "y": 640, "width": 280, "height": 120,
+      "backgroundColor": "#fff9db", "fillStyle": "solid", "strokeColor": "#f08c00",
+      "label": { "text": "Consider the empty state", "fontSize": 16 } },
+    { "type": "text", "x": 500, "y": 690, "text": "What happens on error?", "fontSize": 20, "strokeColor": "#f08c00" },
+    { "type": "arrow", "x": 600, "y": 700, "width": 150, "height": 0, "strokeColor": "#f08c00" },
+    { "type": "ellipse", "x": 1150, "y": 640, "width": 160, "height": 90, "strokeColor": "#1971c2" }
+  ]
+}
+```
+
+   - Supported types: `rectangle`, `ellipse`, `diamond` (all take an optional `label`), `text`, `arrow`, `line`. Arrows draw from `(x, y)` to `(x+width, y+height)`; `start`/`end` `{"id": ...}` bindings only work between elements in the same payload, not existing scene elements — use coordinates to point at user content.
+   - Style props: `strokeColor`, `backgroundColor` + `"fillStyle": "solid"`, `strokeWidth`, `fontSize`. Sticky note = solid rectangle with `backgroundColor` like `#fff9db` and a `label`.
+   - Convention: draw in orange `#f08c00` (or another accent) so Claude's marks stay visually distinct from the user's black strokes.
+3. Post it:
+
+```bash
+{{PROJECT_ROOT}}/bin/whiteboard draw /path/to/elements.json
+```
+
+   - `{"ok":true,"clients":N}` → it's on the user's screen (the view auto-scrolls to fit).
+   - `{"queued":true}` → no board tab is open; run `whiteboard start`, and the queued elements draw on connect.
+4. Wait ~2–3 seconds, then read `~/.claude-whiteboard/board.png` to verify placement looks right (the draw triggers an auto-snapshot). The user can undo Claude's additions with Cmd+Z.
+
+## Board UI notes
+
+- **🗑 button** (next to Ask Claude): erases the entire board after a confirm; the user can undo with Cmd+Z. After a clear, `meta.json` has `empty: true` and `board.png` is blank white — if you read an empty board, say so rather than describing stale content.
+- The panel chat and the terminal are the same Claude session — context carries across both.
+
+## Stopping
+
+```bash
+{{PROJECT_ROOT}}/bin/whiteboard stop
+```
+
+(Also kills the await-ask watcher.)
+
+## Troubleshooting
+
+- Health check: `curl -sf http://localhost:3737/health`
+- Server log: `~/.claude-whiteboard/server.log`
+- After changing frontend code: `cd` to the project and `npm run build`, then restart.

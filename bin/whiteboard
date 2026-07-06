@@ -1,0 +1,178 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(dirname "$SCRIPT_DIR")"
+PORT="${WHITEBOARD_PORT:-3737}"
+URL="http://localhost:$PORT"
+DATA_DIR="$HOME/.claude-whiteboard"
+PID_FILE="$DATA_DIR/server.pid"
+LOG_FILE="$DATA_DIR/server.log"
+AWAIT_PID_FILE="$DATA_DIR/await.pid"
+
+health() {
+  curl -sf --max-time 2 "$URL/health" >/dev/null 2>&1
+}
+
+start() {
+  mkdir -p "$DATA_DIR"
+  if health; then
+    echo "Whiteboard server already running at $URL"
+  else
+    if [ ! -f "$ROOT/dist/index.html" ]; then
+      echo "No build found. Run: cd $ROOT && npm install && npm run build" >&2
+      exit 1
+    fi
+    nohup node "$ROOT/server/server.mjs" >"$LOG_FILE" 2>&1 &
+    echo $! >"$PID_FILE"
+    for _ in $(seq 1 10); do
+      health && break
+      sleep 0.5
+    done
+    if ! health; then
+      echo "Server failed to start. See $LOG_FILE" >&2
+      exit 1
+    fi
+    echo "Whiteboard server started at $URL (pid $(cat "$PID_FILE"))"
+  fi
+  open "$URL"
+}
+
+stop() {
+  local stopped=0
+  if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    kill "$(cat "$PID_FILE")" && stopped=1
+  fi
+  # Fallback: anything else holding the port
+  local pids
+  pids="$(lsof -ti ":$PORT" 2>/dev/null || true)"
+  if [ -n "$pids" ]; then
+    echo "$pids" | xargs kill 2>/dev/null && stopped=1
+  fi
+  if [ -f "$AWAIT_PID_FILE" ] && kill -0 "$(cat "$AWAIT_PID_FILE")" 2>/dev/null; then
+    kill "$(cat "$AWAIT_PID_FILE")" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE" "$AWAIT_PID_FILE"
+  if [ "$stopped" = 1 ]; then
+    echo "Whiteboard server stopped"
+  else
+    echo "Whiteboard server was not running"
+  fi
+}
+
+await_ask() {
+  if ! health; then
+    echo "Whiteboard server not running — run 'whiteboard start' first" >&2
+    exit 1
+  fi
+  # Take over from any existing watcher (including zombies from dead sessions)
+  if [ -f "$AWAIT_PID_FILE" ]; then
+    local old_pid
+    old_pid="$(cat "$AWAIT_PID_FILE" 2>/dev/null || true)"
+    if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+      kill "$old_pid" 2>/dev/null || true
+    fi
+  fi
+  echo $$ >"$AWAIT_PID_FILE"
+  echo "Listening for Ask Claude button presses and chat messages on $URL ..."
+  local out code body failures=0
+  while true; do
+    # NB: not curl -f — a 204 keep-waiting is "success" to curl.
+    # || true must stay on the assignment line (set -e)
+    out="$(curl -s --max-time 70 -w $'\n%{http_code}' "$URL/ask/wait" 2>/dev/null || true)"
+    code="${out##*$'\n'}"
+    body="${out%$'\n'*}"
+    case "$code" in
+      200)
+        rm -f "$AWAIT_PID_FILE"
+        echo "ASK_RECEIVED: the whiteboard user needs you."
+        # printf, not echo: user text may contain backslashes
+        printf 'Wake payload (a hint only, not the source of truth): %s\n' "$body"
+        echo "Protocol: read ~/.claude-whiteboard/chat.json (answer ALL user entries after your"
+        echo "last claude entry — messages may have been coalesced) AND ~/.claude-whiteboard/board.png."
+        echo "Reply once with '$SCRIPT_DIR/whiteboard respond <file.md>', add 1-4 sticky callouts"
+        echo "via 'draw' when the feedback is spatial, then re-arm await-ask in the background."
+        exit 0
+        ;;
+      204)
+        failures=0
+        ;;
+      *)
+        failures=$((failures + 1))
+        if [ "$failures" -ge 2 ]; then
+          rm -f "$AWAIT_PID_FILE"
+          echo "Whiteboard server unreachable — stopped listening. Do not re-arm until 'whiteboard start'." >&2
+          exit 1
+        fi
+        sleep 2
+        ;;
+    esac
+  done
+}
+
+respond() {
+  local file="${1:-}"
+  if [ -z "$file" ] || [ ! -f "$file" ]; then
+    echo "Usage: whiteboard respond <markdown-file>" >&2
+    exit 1
+  fi
+  if ! health; then
+    echo "Whiteboard server not running — run 'whiteboard start' first" >&2
+    exit 1
+  fi
+  # node handles JSON-encoding arbitrary markdown safely; shell quoting can't
+  WHITEBOARD_URL="$URL" node -e '
+    const fs = require("fs");
+    const markdown = fs.readFileSync(process.argv[1], "utf8");
+    fetch(process.env.WHITEBOARD_URL + "/respond", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ markdown }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.ok) { console.error("respond failed:", JSON.stringify(d)); process.exit(1); }
+        console.log("Response posted to the whiteboard panel (" + d.clients + " tab(s) shown).");
+      })
+      .catch((err) => { console.error("respond failed:", err.message); process.exit(1); });
+  ' "$file"
+  echo "IMPORTANT: re-arm the listener now — run '$SCRIPT_DIR/whiteboard await-ask' as a background task so the next button press wakes you."
+}
+
+draw() {
+  local file="${1:--}"
+  if ! health; then
+    echo "Whiteboard server not running — run 'whiteboard start' first" >&2
+    exit 1
+  fi
+  curl -s -X POST "$URL/draw" \
+    -H 'content-type: application/json' \
+    --data-binary "@$file"
+  echo
+}
+
+status() {
+  if health; then
+    echo "Running at $URL"
+  else
+    echo "Not running"
+  fi
+  if [ -f "$DATA_DIR/meta.json" ]; then
+    echo "Last snapshot: $(cat "$DATA_DIR/meta.json")"
+  else
+    echo "No snapshot yet"
+  fi
+}
+
+case "${1:-start}" in
+  start) start ;;
+  stop) stop ;;
+  status) status ;;
+  draw) draw "${2:--}" ;;
+  await-ask) await_ask ;;
+  respond) respond "${2:-}" ;;
+  *)
+    echo "Usage: whiteboard [start|stop|status|draw <elements.json|->|await-ask|respond <file.md>]" >&2
+    exit 1
+    ;;
+esac
