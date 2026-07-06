@@ -102,15 +102,20 @@ await_ask() {
         failures=0
         ;;
       *)
-        failures=$((failures + 1))
-        # Tolerate transient blips (laptop sleep/wake) — only a sustained
-        # outage means the server is really gone
-        if [ "$failures" -ge 5 ]; then
-          rm -f "$AWAIT_PID_FILE"
-          echo "Whiteboard server unreachable — stopped listening. Do not re-arm until 'whiteboard start'." >&2
-          exit 1
+        # A dropped poll isn't a dead server (restarts and sleep/wake drop
+        # connections instantly) — only give up when /health itself stays down
+        if health; then
+          failures=0
+          sleep 1
+        else
+          failures=$((failures + 1))
+          if [ "$failures" -ge 5 ]; then
+            rm -f "$AWAIT_PID_FILE"
+            echo "Whiteboard server unreachable — stopped listening. Do not re-arm until 'whiteboard start'." >&2
+            exit 1
+          fi
+          sleep 3
         fi
-        sleep 3
         ;;
     esac
   done
