@@ -99,6 +99,10 @@ Claude can add elements that appear live on the user's open board. Never edit `b
    - `{"queued":true}` → no board tab is open; run `whiteboard start`, and the queued elements draw on connect.
 4. Wait ~2–3 seconds, then read `~/.claude-whiteboard/board.png` to verify placement looks right (the draw triggers an auto-snapshot). The user can undo Claude's additions with Cmd+Z.
 
+## Keeping the button alive (self-healing)
+
+The await-ask background task can be reaped when a session idles (overnight, context compaction). If a wake task ends as "killed" (not "completed"), or at the start of any turn where the whiteboard is in active use: check `curl -s localhost:3737/health` — if the server is up but `"listening":false` and no other session owns it, quietly re-arm await-ask in the background. Don't loop: re-arm at most once per turn, and never after a "deferring" exit.
+
 ## Board UI notes
 
 - **🗑 button** (next to Ask Claude): erases the entire board after a confirm; the user can undo with Cmd+Z. After a clear, `meta.json` has `empty: true` and `board.png` is blank white — if you read an empty board, say so rather than describing stale content.
