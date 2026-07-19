@@ -60,7 +60,7 @@ Local server (server/server.mjs — zero-dep node:http, port 3737)
    chat.json          ← conversation transcript
 ```
 
-The interesting part is the wake mechanism: the skill has Claude run `bin/whiteboard await-ask` as a background task, which long-polls the server. Pressing ✨ Ask Claude (or sending a chat message) completes that task, which wakes the Claude Code session — it reads the fresh snapshot, posts its reply back to the panel, drops stickies via the draw endpoint, and re-arms the listener. Asks are delivered exactly once, messages sent while Claude is busy queue up, and presses with no session listening get an honest "no one's listening" notice instead of silence.
+The interesting part is the wake mechanism: the skill has Claude run `bin/whiteboard await-ask` as a background task, which long-polls the server. Pressing ✨ Ask Claude (or sending a chat message) completes that task, which wakes the Claude Code session — it reads the fresh snapshot, drops stickies via the draw endpoint, posts its reply back to the panel, and re-arms the listener. Asks are delivered exactly once, messages sent while Claude is busy queue up, and presses with no session listening get an honest "no one's listening" notice instead of silence.
 
 Everything is local: a zero-dependency Node server on `localhost:3737`, files in `~/.claude-whiteboard/`. Nothing leaves your machine.
 

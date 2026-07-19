@@ -5,7 +5,7 @@ description: Open, manage, read, chat via, and draw on the local Claude Whiteboa
 
 # Claude Whiteboard
 
-A local Excalidraw whiteboard the user draws on; it auto-saves snapshots that Claude can read, and has a chat panel + Ask Claude button that wake Claude's session directly from the board.
+A local Excalidraw whiteboard the user draws on; it auto-saves snapshots that Claude can read, and has a chat panel (opened by the ✨ Ask Claude button) whose messages wake Claude's session directly from the board.
 
 - Project: `{{PROJECT_ROOT}}`
 - Data: `~/.claude-whiteboard/` — `board.png` (latest image), `board.excalidraw` (scene JSON), `meta.json` (updatedAt, elementCount, empty), `chat.json` (conversation transcript: `{id, role: "user"|"claude", text, at, kind?}`)
@@ -21,22 +21,22 @@ A local Excalidraw whiteboard the user draws on; it auto-saves snapshots that Cl
 
 This is idempotent — it starts the server only if it isn't running, then opens the board in the browser.
 
-2. **Arm the Ask Claude button** — run this as a background Bash task (`run_in_background: true`):
+2. **Arm the chat listener** — run this as a background Bash task (`run_in_background: true`):
 
 ```bash
 {{PROJECT_ROOT}}/bin/whiteboard await-ask
 ```
 
-It long-polls until the user presses the "✨ Ask Claude" button on the board, then completes, which wakes this session (see below). It cleans up stale watchers from dead sessions, but **defers if another session's listener is already live** (it prints "deferring" and exits 0 — that's success, do not retry or loop; the other session owns the board until its watcher is killed).
+It long-polls until the user sends a chat message from the board, then completes, which wakes this session (see below). It cleans up stale watchers from dead sessions, but **defers if another session's listener is already live** (it prints "deferring" and exits 0 — that's success, do not retry or loop; the other session owns the board until its watcher is killed).
 
 3. **Check for unanswered messages**: read `~/.claude-whiteboard/chat.json`; if there are user entries newer than the last claude entry (messages typed while no session was listening), answer them now via the wake protocol below.
-4. Tell the user the board is ready, that it auto-saves ~1.5s after they stop drawing, and that they can **chat with Claude in the board's side panel** or press **✨ Ask Claude** (top right) — no terminal needed.
+4. Tell the user the board is ready, that it auto-saves ~1.5s after they stop drawing, and that they can **chat with Claude in the board's side panel** (the ✨ Ask Claude button, top right, opens it) — no terminal needed.
 
 ## When the board wakes you (background task completes with "ASK_RECEIVED")
 
-The user pressed the ✨ Ask Claude button OR sent a chat message from the panel. The board forced a fresh snapshot first, so `board.png` is current. The printed wake payload is a **hint only** — messages may have been coalesced.
+The user sent a chat message from the panel. (The ✨ Ask Claude button only opens and focuses the chat — it does not wake you by itself.) The board forced a fresh snapshot first, so `board.png` is current. The printed wake payload is a **hint only** — messages may have been coalesced.
 
-1. Read `~/.claude-whiteboard/chat.json` and collect **all** user entries after your last claude entry — answer every one of them. Entries with `kind: "board-look"` mean the button was pressed.
+1. Read `~/.claude-whiteboard/chat.json` and collect **all** user entries after your last claude entry — answer every one of them. (Entries with `kind: "board-look"` are leftovers from the old button behavior and may appear in older transcripts.)
 2. Read `~/.claude-whiteboard/board.png` (and `board.excalidraw` for exact labels if dense).
 3. Write ONE full response as **markdown to a scratchpad file**, addressing everything — it appears as your chat reply in the panel, so make it self-contained (see response style below). Headings, lists, and tables all render.
 4. Post it:
@@ -51,7 +51,7 @@ The user pressed the ✨ Ask Claude button OR sent a chat message from the panel
    - Placement: read `board.excalidraw` bounds first; put each sticky in empty space adjacent to what it refers to (arrow optional); cluster general takeaways in a clear margin area.
    - Style: orange `#f08c00` stroke + `#fff9db` solid fill — Claude's established visual identity.
    - Skip stickies when the response is purely conversational (naming discussions, yes/no answers) — chat-only is correct there.
-6. **Re-arm the listener**: run `await-ask` as a background task again so the next press/message wakes you. If `await-ask` exited 1 (server unreachable), do NOT re-arm — tell the user instead.
+6. **Re-arm the listener**: run `await-ask` as a background task again so the next message wakes you. If `await-ask` exited 1 (server unreachable), do NOT re-arm — tell the user instead.
 7. In the terminal, reply with only a one-line confirmation (e.g. "Responded on the board — see the panel."). The panel response is the deliverable.
 
 ## Reading the board ("look at the board", "what do you think of this?")
@@ -99,7 +99,7 @@ Claude can add elements that appear live on the user's open board. Never edit `b
    - `{"queued":true}` → no board tab is open; run `whiteboard start`, and the queued elements draw on connect.
 4. Wait ~2–3 seconds, then read `~/.claude-whiteboard/board.png` to verify placement looks right (the draw triggers an auto-snapshot). The user can undo Claude's additions with Cmd+Z.
 
-## Keeping the button alive (self-healing)
+## Keeping the listener alive (self-healing)
 
 The await-ask background task can be reaped when a session idles (overnight, context compaction). If a wake task ends as "killed" (not "completed"), or at the start of any turn where the whiteboard is in active use: check `curl -s localhost:3737/health` — if the server is up but `"listening":false` and no other session owns it, quietly re-arm await-ask in the background. Don't loop: re-arm at most once per turn, and never after a "deferring" exit.
 

@@ -15,6 +15,7 @@ export type PanelStatus = "idle" | "waiting" | { notice: string };
 export function Panel({
   open,
   status,
+  focusToken,
   entries,
   onOpen,
   onClose,
@@ -23,6 +24,7 @@ export function Panel({
 }: {
   open: boolean;
   status: PanelStatus;
+  focusToken: number;
   entries: ChatEntry[];
   onOpen: () => void;
   onClose: () => void;
@@ -31,6 +33,7 @@ export function Panel({
 }) {
   const [draft, setDraft] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const sorted = [...entries].sort((a, b) => a.id - b.id);
 
@@ -38,6 +41,10 @@ export function Panel({
     const body = bodyRef.current;
     if (body) body.scrollTop = body.scrollHeight;
   }, [sorted.length, status]);
+
+  useEffect(() => {
+    if (focusToken > 0) inputRef.current?.focus();
+  }, [focusToken, open]);
 
   if (!open) {
     if (entries.length === 0 && status === "idle") return null;
@@ -117,6 +124,7 @@ export function Panel({
       </div>
       <div className="chat-input-row">
         <textarea
+          ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

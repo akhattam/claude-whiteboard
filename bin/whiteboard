@@ -94,8 +94,8 @@ await_ask() {
         printf 'Wake payload (a hint only, not the source of truth): %s\n' "$body"
         echo "Protocol: read ~/.claude-whiteboard/chat.json (answer ALL user entries after your"
         echo "last claude entry — messages may have been coalesced) AND ~/.claude-whiteboard/board.png."
-        echo "Reply once with '$SCRIPT_DIR/whiteboard respond <file.md>', add 1-4 sticky callouts"
-        echo "via 'draw' when the feedback is spatial, then re-arm await-ask in the background."
+        echo "FIRST add 1-4 sticky callouts via 'draw' when the feedback is spatial, THEN reply"
+        echo "once with '$SCRIPT_DIR/whiteboard respond <file.md>', then re-arm await-ask in the background."
         exit 0
         ;;
       204)

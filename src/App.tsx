@@ -35,7 +35,7 @@ export default function App() {
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [status, setStatus] = useState<PanelStatus>("idle");
-  const [asking, setAsking] = useState(false);
+  const [focusToken, setFocusToken] = useState(0);
 
   const addEntry = useCallback((entry: ChatEntry) => {
     setEntries((prev) =>
@@ -91,33 +91,12 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [status]);
 
-  const askClaude = useCallback(async () => {
-    if (!api || asking) return;
-    setAsking(true);
+  // Opens the chat and focuses the input — Claude is only woken once the
+  // user actually sends a question, not by the button press itself
+  const askClaude = useCallback(() => {
     setPanelOpen(true);
-    setStatus("waiting");
-    try {
-      // Fresh board.png before Claude looks; a stale one beats a dead button
-      await snapshotNow(api);
-    } catch {}
-    try {
-      const res = await fetch("/ask", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          elementCount: api.getSceneElements().length,
-        }),
-      });
-      const data = await res.json();
-      if (data.listening === false) {
-        setStatus({ notice: NOT_LISTENING_NOTICE });
-      }
-    } catch {
-      setStatus({ notice: "Could not reach the whiteboard server." });
-    } finally {
-      setAsking(false);
-    }
-  }, [api, asking]);
+    setFocusToken((t) => t + 1);
+  }, []);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -180,10 +159,10 @@ export default function App() {
               <button
                 className="ask-claude-btn"
                 onClick={askClaude}
-                disabled={asking || !api}
-                title="Snapshot the board and ask Claude to look at it"
+                disabled={!api}
+                title="Open the chat and ask Claude a question"
               >
-                {asking ? "Asking…" : "✨ Ask Claude"}
+                ✨ Ask Claude
               </button>
             </>
           )}
@@ -192,6 +171,7 @@ export default function App() {
       <Panel
         open={panelOpen}
         status={status}
+        focusToken={focusToken}
         entries={entries}
         onOpen={() => setPanelOpen(true)}
         onClose={() => setPanelOpen(false)}
